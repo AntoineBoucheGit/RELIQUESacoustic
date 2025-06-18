@@ -225,3 +225,149 @@ print("Partial correlation between acoustic matrix and distance to edge matrix (
 print(pcorr_G)
 
 
+#REPETITION 100 FOIS :
+
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from scipy.spatial.distance import pdist, squareform
+import pingouin as pg
+import random
+from tqdm import tqdm  
+
+
+df = pd.read_csv('/Users/superman/Desktop/Stage/IndicesReliques/ReliquesIndicesTotAENettoyé.csv', sep=',')
+df['Distance_lisiere'] = pd.to_numeric(df['Distance_lisiere'].astype(str).str.extract(r'(\d+)')[0])
+df = df[df["rainy (1 = rainy, 0 = not rainy)"] == 0]
+df["Heure_num"] = df["Heure"].astype(str).str.zfill(6).str[:2].astype(int)
+
+df["Intervalle"] = pd.cut(df["Heure_num"],
+                          bins=[0, 3, 6, 9, 12, 15, 18, 21, 24],
+                          labels=["0-3h", "3-6h", "6-9h", "9-12h", "12-15h", "15-18h", "18-21h", "21-00h"],
+                          right=False, include_lowest=True)
+
+features_cols = df.columns.difference([
+    "Fichier", "rainy (1 = rainy, 0 = not rainy)", "Zone",
+    "Distance_lisiere", "Heure", "Heure_num", "Date",
+    "jour/nuit", "MEANt", "Intervalle", "Identifiant"
+])
+# Liste des features negatives
+# A ajouter a features_cols pourr evaluer corr sans indices rajoutant du bruit
+features_neg = [
+    "ACI", "ACTspCount", "ACTspFract", "ACTspMean", "ACTtCount", "ACTtFraction", "ACTtMean", "AGI",
+    "AnthroEnergy", "EAS", "ECU", "ECV", "EPS_KURT", "EPS_SKEW", "EVNspCount", "EVNspFract",
+    "EVNtFraction", "EVNtMean", "HFC", "Ht", "KURTt", "LFC", "MFC", "ROU", "SKEWt",
+    "SNRf", "SNRt", "TFSD", "VARf", "VARt", "ZCR"
+]
+
+
+zone_to_distance = df.groupby("Zone")["Distance_lisiere"].agg(lambda x: x.mode()[0]).to_dict()
+selected_zones = df["Zone"].unique()
+
+
+def compute_partial_corr(df_sub):
+
+    # Standardisation
+    scaler = StandardScaler()
+    X_scaled_sub = scaler.fit_transform(df_sub[features_cols])
+
+    # Calcul des distances
+    distance_matrix = squareform(pdist(X_scaled_sub, metric='euclidean'))
+
+    lisiere_matrix = np.abs(df_sub["Distance_lisiere"].values[:, None] - df_sub["Distance_lisiere"].values[None, :])
+    site_matrix = (df_sub["Zone"].values[:, None] != df_sub["Zone"].values[None, :]).astype(int)
+
+    triu_idx = np.triu_indices_from(distance_matrix, k=1)
+
+    df_corr = pd.DataFrame({
+        'euclidean': distance_matrix[triu_idx],
+        'lisiere': lisiere_matrix[triu_idx],
+        'site': site_matrix[triu_idx]
+    })
+
+    pcorr = pg.partial_corr(data=df_corr, x='euclidean', y='lisiere', covar='site', method='spearman')
+    return pcorr['r'].values[0],pcorr["CI95%"].values[0]
+
+
+# Listes de résultats
+results_global, results_jour, results_nuit = [], [], []
+
+
+# Boucle 
+for seed in tqdm(range(100), desc="Iterations"):
+    np.random.seed(seed)
+    random.seed(seed)
+
+    results = []
+
+    for zone in selected_zones:
+        df_zone = df[df["Zone"] == zone]
+
+        valid_days = []
+        for date, group in df_zone.groupby("Date"):
+            if set(group["Intervalle"].dropna().unique()) == set(df["Intervalle"].cat.categories):
+                valid_days.append(date)
+
+        if len(valid_days) < 4:
+            continue
+
+        n_days = 6 if len(valid_days) >= 6 else 4
+        selected_days = np.random.choice(valid_days, size=n_days, replace=False)
+
+        for date in selected_days:
+            df_day = df_zone[df_zone["Date"] == date]
+            for intervalle, group in df_day.groupby("Intervalle"):
+                mean_vals = group[features_cols].mean()
+                result = {
+                    "Zone": zone,
+                    "Date": date,
+                    "Intervalle": intervalle,
+                    "Distance_lisiere": zone_to_distance[zone]
+                }
+                result.update(mean_vals.to_dict())
+                results.append(result)
+
+    df_result = pd.DataFrame(results)
+    if df_result.empty:
+        continue
+
+    df_result = df_result.sort_values(by=["Distance_lisiere", "Zone", "Date", "Intervalle"]).reset_index(drop=True)
+
+    df_sub = df_result
+    df_sub_jour = df_sub[df_sub["Intervalle"].isin(["6-9h", "9-12h", "12-15h", "15-18h"])]
+    df_sub_nuit = df_sub[df_sub["Intervalle"].isin(["21-00h", "0-3h", "3-6h", "18-21h"])]
+
+    try:
+        results_global.append(compute_partial_corr(df_sub))
+        results_jour.append(compute_partial_corr(df_sub_jour))
+        results_nuit.append(compute_partial_corr(df_sub_nuit))
+    except Exception as e:
+        continue  
+
+def format_ci(ci):
+    return f"[{ci[0]:.4f}, {ci[1]:.4f}]"
+
+if results_global:
+    r_global = [r[0] for r in results_global]
+    ci_global = np.array([r[1] for r in results_global])
+    mean_r_global = np.mean(r_global)
+    mean_ci_global = np.mean(ci_global, axis=0)
+
+    r_jour = [r[0] for r in results_jour]
+    ci_jour = np.array([r[1] for r in results_jour])
+    mean_r_jour = np.mean(r_jour)
+    mean_ci_jour = np.mean(ci_jour, axis=0)
+
+    r_nuit = [r[0] for r in results_nuit]
+    ci_nuit = np.array([r[1] for r in results_nuit])
+    mean_r_nuit = np.mean(r_nuit)
+    mean_ci_nuit = np.mean(ci_nuit, axis=0)
+
+    print("\n==== MOYENNES DES CORRÉLATIONS PARTIELLES (100 itérations) ====")
+    print(f"Global : {mean_r_global:.4f} avec IC95% {format_ci(mean_ci_global)}")
+    print(f"Jour   : {mean_r_jour:.4f} avec IC95% {format_ci(mean_ci_jour)}")
+    print(f"Nuit   : {mean_r_nuit:.4f} avec IC95% {format_ci(mean_ci_nuit)}")
+else:
+    print("Pas de résultats valides à afficher.")
+
+
