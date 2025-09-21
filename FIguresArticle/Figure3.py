@@ -121,3 +121,74 @@ plt.tight_layout()
 plt.savefig("matrice_distance_euclidienne.pdf")
 
 plt.show()
+
+
+# MATRICE DE DIFFÉRENCE DE DISTANCE À LA LISIÈRE 
+
+lisiere_distance_matrix = np.zeros((len(df_result), len(df_result)))
+
+for i in range(len(df_result)):
+    for j in range(len(df_result)):
+        lisiere_distance_matrix[i, j] = abs(df_result["Distance_lisiere"].iloc[i] - df_result["Distance_lisiere"].iloc[j]) if i != j else 0
+
+
+
+
+
+plt.figure(figsize=(10, 8))
+
+# heatmap
+ax = sns.heatmap(
+    lisiere_distance_matrix,
+    cmap="viridis",
+    square=True,
+    fmt=".0f",
+    cbar_kws={"label": "Différence de distance à la lisière (m)"},
+    xticklabels=False,
+    yticklabels=False
+)
+
+cbar = ax.collections[0].colorbar
+cbar.ax.yaxis.label.set_size(28) 
+plt.tight_layout()
+
+# Sauvegarde 
+
+plt.savefig("matrice_distance_lisiere.pdf")
+
+plt.show()
+
+
+# MATRICE SITE
+
+site_matrix = np.zeros((len(df_result), len(df_result)))
+
+for i in range(len(df_result)):
+    for j in range(len(df_result)):
+        site_matrix[i, j] = 1 if df_result["Zone"].iloc[i] != df_result["Zone"].iloc[j] else 0
+
+# HEATMAP DE LA MATRICE SITE 
+
+
+plt.figure(figsize=(10, 8))
+
+ax = sns.heatmap(
+    site_matrix,
+    cmap="viridis",
+    square=True,
+    cbar_kws={
+        "ticks": [0, 1],
+        "label": "Appartenance au même site\n(0 = oui, 1 = non)"
+    },
+    vmin=0, vmax=1,
+    xticklabels=False,
+    yticklabels=False
+)
+
+
+cbar = ax.collections[0].colorbar
+cbar.ax.yaxis.label.set_size(30) 
+
+plt.savefig("matrice_site.pdf")
+plt.tight_layout()
+plt.show()
