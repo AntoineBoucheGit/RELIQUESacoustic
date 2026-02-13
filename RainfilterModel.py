@@ -20,7 +20,7 @@ df_indices = pd.read_csv('hl.csv',sep=',')
 y = df_indices["rainy (1 = rainy, 0 = not rainy)"]
 
 # Features
-excluded_columns=["Fichier", "rainy (1 = rainy, 0 = not rainy)","Zone","Distance_lisiere","Heure","Date","MEANt"]
+excluded_columns=["Fichier", "rainy (1 = rainy, 0 = not rainy)","Zone","Distance_lisiere","Heure","Date","MEANt","jour/nuit","Identifiant"]
 X = df_indices.drop(columns=excluded_columns)
 
 
