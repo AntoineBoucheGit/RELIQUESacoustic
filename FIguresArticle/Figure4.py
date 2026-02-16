@@ -4,9 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from scipy.spatial.distance import pdist, squareform
-import pingouin as pg
 import random
-from tqdm import tqdm
 from scipy.stats import pearsonr
 
 
@@ -14,7 +12,7 @@ np.random.seed(44)
 random.seed(44)
 
 
-df = pd.read_csv('/Users/superman/Desktop/Stage/IndicesReliques/ReliquesIndicesTotAENettoyé.csv', sep=',')
+df = pd.read_csv('data', sep=',')
 df['Distance_lisiere'] = pd.to_numeric(df['Distance_lisiere'].astype(str).str.extract(r'(\d+)')[0])
 df = df[df["rainy (1 = rainy, 0 = not rainy)"] == 0]
 df["Heure_num"] = df["Heure"].astype(str).str.zfill(6).str[:2].astype(int)
@@ -29,13 +27,14 @@ df["Intervalle"] = pd.cut(df["Heure_num"],
 features_cols = df.columns.difference([
     "Fichier", "rainy (1 = rainy, 0 = not rainy)", "Zone",
     "Distance_lisiere", "Heure", "Heure_num", "Date",
-    "jour/nuit", "MEANt", "Intervalle", "Identifiant"
-])
-#"ACI","ACTTspCount","ACTspFract","ACTspMean","ACTtCount","ACTtFraction","ACTtMean","EAS","ECU","ECV","EVNspCount","EVNspFract","SNRf",
+    "jour/nuit", "MEANt", "Intervalle", "Identifiant"])
+
+# "ACI","ACTTspCount","ACTspFract","ACTspMean","ACTtCount","ACTtFraction","ACTtMean","EAS","ECU","ECV","EVNspCount","EVNspFract","SNRf"
+
 zone_to_distance = df.groupby("Zone")["Distance_lisiere"].agg(lambda x: x.mode()[0]).to_dict()
 
-# Création de plusieurs répétitions de résultats
-n_repetitions = 100
+
+n_repetitions = 10 
 all_results = []
 
 for rep in range(n_repetitions):
@@ -54,11 +53,11 @@ for rep in range(n_repetitions):
             if set(group["Intervalle"].dropna().unique()) == set(df["Intervalle"].cat.categories):
                 valid_days.append(date)
 
-        if len(valid_days) < 6:
+        if len(valid_days) < 4:
             print(f"Zone {zone} ignorée (pas assez de jours valides : {len(valid_days)})")
             continue
 
-        n_days = len(valid_days)  if len(valid_days) >= 6 else 4
+        n_days = 6 if len(valid_days) >= 6 else 4
         selected_days = np.random.choice(valid_days, size=n_days, replace=False)
 
         for date in selected_days:
@@ -84,7 +83,6 @@ for rep in range(n_repetitions):
 df_result = pd.concat(all_results, ignore_index=True)
 
 #INTERVALLES CHOISIS
-#Global
 df_filtered=df_result
 
 # JOUR
@@ -102,34 +100,30 @@ df_scaled = df_filtered.copy()
 df_scaled[features_cols] = scaled_features
 
 
-distances_lisiere = sorted(df_scaled["Distance_lisiere"].unique())
-print(f"Distances à la lisière dans le jeu de données: {distances_lisiere}")
+distances = sorted(df_scaled["Distance_lisiere"].unique())
+print(f"distances dans le jeu de données: {distances}")
 
-
-n_samples = 100
+n_samples = 25
 correlations = []
 
-
-for distance_1 in distances_lisiere:
-    for distance_2 in distances_lisiere:
+for distance_1 in distances:
+    for distance_2 in distances:
         if distance_1 == distance_2:
             continue
             
-        print(f"Analyse des distances {distance_1}m et {distance_2}m...")
+        print(f"Analyse des distances {distance_1} et {distance_2}...")
         sample_correlations = []
         
 
         df1_full = df_scaled[df_scaled["Distance_lisiere"] == distance_1]
         df2_full = df_scaled[df_scaled["Distance_lisiere"] == distance_2]
         
-
         min_size = min(len(df1_full), len(df2_full))
         if min_size < 5:
-            print(f"  Pas assez de données pour les distances {distance_1}m et {distance_2}m")
+            print(f"  Pas assez de données pour les distances {distance_1} et {distance_2}")
             correlations.append((distance_1, distance_2, np.nan))
             continue
-            
-
+        
         for i in range(n_samples):
             sample_seed = 100 + i
             
@@ -155,41 +149,40 @@ for distance_1 in distances_lisiere:
         correlations.append((distance_1, distance_2, mean_corr, std_corr))
 
 
-df_correlations = pd.DataFrame(correlations, columns=["Distance_1", "Distance_2", "Correlation", "Std_Correlation"])
+df_correlations = pd.DataFrame(correlations, columns=["distance_1", "distance_2", "Correlation", "Std_Correlation"])
+df_pivot = df_correlations.pivot(index="distance_1", columns="distance_2", values="Correlation")
 
-
-df_pivot = df_correlations.pivot(index="Distance_1", columns="Distance_2", values="Correlation")
 
 plt.figure(figsize=(12, 14))
-sns.heatmap(df_pivot, annot=True, cmap="viridis", fmt=".2f", linewidths=0.5)
-plt.xlabel("Distance à la lisière (m)", fontsize=12)
-plt.ylabel("Distance à la lisière (m)", fontsize=12)
+
+
+
+ax = sns.heatmap(
+    df_pivot, 
+    annot=True, 
+    cmap="viridis", 
+    fmt=".2f", 
+    linewidths=0.5, 
+    cbar_kws={"label": "Correlation"} 
+)
+
+
+cbar = ax.collections[0].colorbar
+cbar.set_label("Correlation", fontsize=30)
+
+plt.xlabel("Distance to edge (m)", fontsize=15)
+plt.ylabel("Distance to edge (m)", fontsize=15)
 plt.tight_layout()
+
+# affichage + sauvegarde
 plt.show()
 plt.savefig("figure4.pdf")
 
-#%%
-
-
-triu_indices = np.triu_indices_from(df_pivot, k=1)
-
-
-distances_1 = df_pivot.index.values[triu_indices[0]]
-distances_2 = df_pivot.columns.values[triu_indices[1]]
-
-
-correlation_values = df_pivot.values[triu_indices]
-
-
-df_tri = pd.DataFrame({
-    "Distance_1": distances_1,
-    "Distance_2": distances_2,
-    "": correlation_values
-})
 
 
 
-#%% SCHEMA
+## SCHEMA
+
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -197,15 +190,16 @@ import numpy as np
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
 import matplotlib.cm as cm
-from itertools import combinations
 
 
 
 
-distances_sorted = sorted(distances_lisiere)
+
+distances_sorted = sorted(distances)
+
 x_positions = {d: i * 1.5 for i, d in enumerate(distances_sorted)}
 
-# Normalisation
+
 corr_values = df_correlations['Correlation'].dropna()
 norm_color = plt.Normalize(vmin=corr_values.min(), vmax=corr_values.max())
 norm_width = plt.Normalize(vmin=0, vmax=abs(corr_values).max())
@@ -218,7 +212,7 @@ draw_up = True
 seen_pairs = set()
 
 for _, row in df_correlations.iterrows():
-    d1, d2, corr = row['Distance_1'], row['Distance_2'], row['Correlation']
+    d1, d2, corr = row['distance_1'], row['distance_2'], row['Correlation']
     if np.isnan(corr) or d1 == d2:
         continue
 
