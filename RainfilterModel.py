@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 
 
 #Pre Processing
-# hand-labelled dataset
-df_indices = pd.read_csv('hl.csv',sep=',')
+
+df_indices = pd.read_csv('data',sep=',')
 
 
 # Target
@@ -30,7 +30,7 @@ train_balanced_acc_svc_list = []
 test_balanced_acc_svc_list = []
 
 # Number of iterations 
-num_seed = 100
+num_seed = 1
 random_seeds = np.random.randint(0, 1000, size=num_seed)
 
 
@@ -59,10 +59,10 @@ for seed in random_seeds:
     pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_scaled)
     X_train_pca = pca.transform(X_train_scaled)
     
-    # Display of variance explained by principal components
+    # Explained variance
     # print('Explained variance: ' + str(np.sum(pca.explained_variance_ratio_)))
     
-    # Classifier training with PCA data
+    # Classifier training
     clf.fit(X_train_pca, y_train)
 
     # Prediction
@@ -82,6 +82,7 @@ for seed in random_seeds:
 
   
      # Test 
+     
     #Scale
     X_test_scaled = scaler.transform(X_test)
     
